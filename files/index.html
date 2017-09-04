@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>PLUS-2017</title>
+    <script src="jquery.min.js"></script>
+    <script src="w2ui.min.js"></script>
+    <link rel="stylesheet" type="text/css" href="w2ui.min.css" />
+    <link rel="stylesheet" href="font-awesome/css/font-awesome.min.css">
+</head>
+<body>
+<style>
+.w2ui-sidebar .w2ui-sidebar-div .w2ui-node-caption {
+    margin-left: : 0px;
+}
+</style>
+<div id="main" style="width: 100%; height: 400px;"></div>
+
+<script type="text/javascript">
+var config = {
+    layout: {
+        name: 'layout',
+        padding: 0,
+        panels: [
+            { type: 'top',  size: 75, content: "+PLUS" },
+            { type: 'left', size: 200, resizable: true, minSize: 120 },
+            { type: 'main', minSize: 550 }
+        ]
+    },
+    sidebar: {
+        name: 'sidebar',
+        nodes: [ 
+            { id: 'configs', text: 'Configuration', group: true, expanded: true, 
+              nodes: [
+                { id: 'config_general', text: '<i class="fa fa-cogs fa-lg"></i> General</div>' },
+                { id: 'config_http', text: '<i class="fa fa-chrome fa-lg"></i> HTTP' },
+                { id: 'config_smb', text: '<i class="fa fa-file fa-lg"></i> SMB' } 
+              ]
+            },
+            { id: 'logs', text: 'Logs', group: true, expanded: true, 
+              nodes: [
+                { id: 'logs_http', text: '<i class="fa fa-chrome fa-lg"></i> HTTP' },
+                { id: 'logs_smb', text: '<i class="fa fa-file fa-lg"></i> SMB' } 
+              ]
+            },
+            { id: 'status', text: 'Status', group: true, expanded: true, 
+              nodes: [
+                { id: 'html_status', text: '<i class="fa fa-heartbeat fa-lg"></i> General', selected: true },
+              ]
+            }  
+        ],
+        onClick: function (event) {
+            switch (event.target) {
+                case 'config_http':
+                    w2ui.layout.content('main', w2ui.config_http);
+                    break;
+                case 'config_smb':
+                    w2ui.layout.content('main', w2ui.config_smb);
+                    break;
+                case 'logs_http':
+                    w2ui.layout.content('main', w2ui.logs_http);
+                    break;
+                case 'logs_smb':
+                    w2ui.layout.content('main', w2ui.logs_smb);
+                    break;
+                case 'config_general':
+                    w2ui.layout.content('main', w2ui.config_general);
+                    break;
+                case 'html_status':
+                    ajax_get('/status', function(data) {
+                        var jsonText = "<P>HTTP: " + data.m.http60 + ", " + data.m.http300 + ", " + 
+                                                     data.m.http600 + ", " + data.m.http +"</P>" +
+                                       "<P>SMB: " + data.m.smb60 +  ", " + data.m.smb300 +  ", " + 
+                                                    data.m.smb600 +  ", " + data.m.smb +"</P>" +
+                                       "<P>Hosts: " + data.m.http600host + ", " + data.m.smb600host + "</P>" +
+                                       "<PRE>" + JSON.stringify(data.c, undefined, 2)+ "</PRE>";
+                        document.getElementById("status").innerHTML = jsonText;
+                    });
+
+                    w2ui.layout.content('main', '<div id="status" style="padding: 10px"></div>');
+                    $(w2ui.layout.el('main'))
+                        .removeClass('w2ui-grid')
+                        .css({ 
+                            'border-left': '1px solid silver'
+                        });
+                    break;
+            }
+        }
+    },
+    config_http: { 
+        name: 'config_http',
+        url: '/config_http',
+        columns: [
+            { field: 'interval', caption: 'Interval (seconds)', size: '50%' },
+            { field: 'url', caption: 'URL', size: '50%' },
+        ],
+        show: {
+            toolbar: true,
+            footer: true,
+            toolbarAdd: true,
+            toolbarDelete: true,
+            toolbarSearch: false,
+            toolbarInput: false,
+            searchAll: false,
+            toolbarColumns: false
+        },
+        onAdd: function () {
+            httpPopup();
+        }
+    },
+    config_smb: { 
+        name: 'config_smb',
+        url: '/config_smb',
+        columns: [
+            { field: 'interval', caption: 'Interval (seconds)', sortable: true },
+            { field: 'share', caption: 'Share', sortable: true },
+            { field: 'domain', caption: 'Domain', sortable: true },
+            { field: 'username', caption: 'Username', sortable: true },
+            { field: 'password', caption: 'Password', sortable: true }
+        ],
+        show: {
+            toolbar: true,
+            footer: true,
+            toolbarAdd: true,
+            toolbarDelete: true,
+            toolbarSearch: false,
+            toolbarInput: false,
+            searchAll: false,
+            toolbarColumns: false
+        },
+        onAdd: function () {
+            smbPopup();
+        }
+    },
+    logs_http: { 
+        name: 'logs_http',
+        url: '/http_db',
+        method: 'GET', // need this to avoid 412 error on Safari
+        //recid: 'date',
+        show: {
+            toolbar: true,
+            footer: true,
+            toolbarColumns: false
+        },
+        columns: [
+            { field: 'date', caption: 'Date' },
+            { field: 'host', caption: 'Host' },
+            { field: 'url', caption: 'URL' },
+            { field: 'statuscode', caption: 'Status Code' }
+        ]
+    },
+    logs_smb: { 
+        name: 'logs_smb',
+        url: '/smb_db',
+        method: 'GET', // need this to avoid 412 error on Safari
+        //recid: 'date',
+        show: {
+            toolbar: true,
+            footer: true,
+            toolbarColumns: false
+        },
+        columns: [
+            { field: 'date', caption: 'Date' },
+            { field: 'host', caption: 'Host' },
+            { field: 'share', caption: 'Share' },
+            { field: 'domain', caption: 'Domain' },
+            { field: 'username', caption: 'Username' },
+            { field: 'password', caption: 'Password' }
+
+        ]
+    },
+    config_general: { 
+        //header: 'Edit Record',
+        name: 'config_general',
+        url: { get: '/config_general', save: '/config_general' },
+        recid: 1,
+        fields: [
+            //{ name: 'recid', type: 'text', html: { caption: 'ID', attr: 'size="10" readonly' } },
+            { name: 'cspi', type: 'text', type: 'int', required: true, html: { caption: 'CSPI:', attr: 'size="40" maxlength="40"' } }
+        ],
+        actions: {
+            save: function () {
+                //this.clear();
+                this.save();
+            }
+        //     Save: function () {
+        //         var errors = this.validate();
+        //         if (errors.length > 0) return;
+        //         if (this.recid == 0) {
+        //             w2ui.grid.add($.extend(true, { recid: w2ui.grid.records.length + 1 }, this.record));
+        //             w2ui.grid.selectNone();
+        //             this.clear();
+        //         } else {
+        //             w2ui.grid.set(this.recid, this.record);
+        //             w2ui.grid.selectNone();
+        //             this.clear();
+        //         }
+        //     }
+        }
+    }
+};
+
+$(function () {
+    // initialization
+    $('#main').w2layout(config.layout);
+    w2ui.layout.content('left', $().w2sidebar(config.sidebar));
+    w2ui.layout.content('main', $().w2grid(config.html_status));
+    // in memory initialization
+    $().w2grid(config.config_http);
+    $().w2grid(config.config_smb);
+    $().w2grid(config.logs_http);
+    $().w2grid(config.logs_smb);
+    $().w2form(config.config_general);
+});
+</script>
+<script type="text/javascript">
+function smbPopup () {
+    if (!w2ui.foo) {
+        $().w2form({
+            name: 'foo',
+            style: 'border: 0px; background-color: transparent;',
+            url: '/config_smb',
+            formHTML: 
+                '<div class="w2ui-page page-0">'+
+                '    <div class="w2ui-field">'+
+                '        <label>Interval:</label>'+
+                '        <div>'+
+                '           <input name="interval" type="text" maxlength="100" style="width: 250px"/>'+
+                '        </div>'+
+                '    </div>'+
+                '    <div class="w2ui-field">'+
+                '        <label>Share:</label>'+
+                '        <div>'+
+                '            <input name="share" type="text" maxlength="100" style="width: 250px"/>'+
+                '        </div>'+
+                '    </div>'+
+                '    <div class="w2ui-field">'+
+                '        <label>Domain:</label>'+
+                '        <div>'+
+                '            <input name="domain" type="text" style="width: 250px"/>'+
+                '        </div>'+
+                '    </div>'+
+                '    <div class="w2ui-field">'+
+                '        <label>Username:</label>'+
+                '        <div>'+
+                '            <input name="username" type="text" style="width: 250px"/>'+
+                '        </div>'+
+                '    </div>'+                '    <div class="w2ui-field">'+
+                '        <label>Password:</label>'+
+                '        <div>'+
+                '            <input name="password" type="text" style="width: 250px"/>'+
+                '        </div>'+
+                '    </div>'+
+                '</div>'+
+                '<div class="w2ui-buttons">'+
+                '    <button class="btn" name="reset">Reset</button>'+
+                '    <button class="btn" name="save">Save</button>'+
+                '</div>',
+            fields: [
+                { name: 'interval', type: 'int', required: true },
+                { name: 'share', type: 'text', required: true },
+                { name: 'domain', type: 'text', required: true },
+                { name: 'username', type: 'text' },
+                { name: 'password', type: 'text' }
+            ],
+            actions: {
+                "save": function () { this.validate(); 
+                                      this.save(function(data){ 
+                                                    w2ui['config_smb'].records = data.records;
+                                                    w2ui['config_smb'].refresh();
+                                                    w2ui['foo'].clear();
+                                                }); 
+                                      w2popup.close();
+                        },
+                "reset": function () { this.clear(); }
+            }
+        });
+    }
+    $().w2popup('open', {
+        title   : 'Add SMB',
+        body    : '<div id="form" style="width: 100%; height: 100%;"></div>',
+        style   : 'padding: 15px 0px 0px 0px',
+        width   : 500,
+        height  : 300, 
+        //showMax : true,
+        onToggle: function (event) {
+            $(w2ui.foo.box).hide();
+            event.onComplete = function () {
+                $(w2ui.foo.box).show();
+                w2ui.foo.resize();
+            }
+        },
+        onOpen: function (event) {
+            event.onComplete = function () {
+                // specifying an onOpen handler instead is equivalent to specifying an onBeforeOpen handler, which would make this code execute too early and hence not deliver.
+                $('#w2ui-popup #form').w2render('foo');
+            }
+        },
+        onSave: function (event) {
+        }
+    });
+}
+function httpPopup () {
+    if (!w2ui.foohttp) {
+        $().w2form({
+            name: 'foohttp',
+            style: 'border: 0px; background-color: transparent;',
+            url: '/config_http',
+            formHTML: 
+                '<div class="w2ui-page page-0">'+
+                '    <div class="w2ui-field">'+
+                '        <label>Interval:</label>'+
+                '        <div>'+
+                '           <input name="interval" type="text" maxlength="100" style="width: 250px"/>'+
+                '        </div>'+
+                '    </div>'+
+                '    <div class="w2ui-field">'+
+                '        <label>URL:</label>'+
+                '        <div>'+
+                '            <input name="url" type="text" maxlength="100" style="width: 250px"/>'+
+                '        </div>'+
+                '    </div>'+
+                '</div>'+
+                '<div class="w2ui-buttons">'+
+                '    <button class="btn" name="reset">Reset</button>'+
+                '    <button class="btn" name="save">Save</button>'+
+                '</div>',
+            fields: [
+                { name: 'interval', type: 'int', required: true },
+                { name: 'url', type: 'text', required: true }
+            ],
+            actions: {
+                "save": function () { this.validate(); 
+                                      this.save(function(data){ 
+                                                    w2ui['config_http'].records = data.records;
+                                                    w2ui['config_http'].refresh();
+                                                    w2ui['foohttp'].clear();
+                                                });
+                                      w2popup.close();
+                        },
+                "reset": function () { this.clear(); }
+            }
+        });
+    }
+    $().w2popup('open', {
+        title   : 'Add HTTP',
+        body    : '<div id="form" style="width: 100%; height: 100%;"></div>',
+        style   : 'padding: 15px 0px 0px 0px',
+        width   : 500,
+        height  : 300, 
+        //showMax : true,
+        onToggle: function (event) {
+            $(w2ui.foohttp.box).hide();
+            event.onComplete = function () {
+                $(w2ui.foohttp.box).show();
+                w2ui.foohttp.resize();
+            }
+        },
+        onOpen: function (event) {
+            event.onComplete = function () {
+                // specifying an onOpen handler instead is equivalent to specifying an onBeforeOpen handler, which would make this code execute too early and hence not deliver.
+                $('#w2ui-popup #form').w2render('foohttp');
+            }
+        }
+    });
+}
+function ajax_get(url, callback) {
+    var xmlhttp = new XMLHttpRequest();
+    xmlhttp.onreadystatechange = function() {
+        if (xmlhttp.readyState == 4 && xmlhttp.status == 200) {
+            console.log('responseText:' + xmlhttp.responseText);
+            try {
+                var data = JSON.parse(xmlhttp.responseText);
+            } catch(err) {
+                console.log(err.message + " in " + xmlhttp.responseText);
+                return;
+            }
+            callback(data);
+        }
+    };
+ 
+    xmlhttp.open("GET", url, true);
+    xmlhttp.send();
+}
+window.onload = function() {
+}
+</script>
+
+</body>
+</html>

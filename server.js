@@ -1,79 +1,145 @@
+var _ = require('lodash');
 var express = require('express');
 var bodyParser = require('body-parser');
 var sqlite3 = require('sqlite3');
 
-var port = 8008;
+var port = 80;
 var ip_addr = "127.0.0.1"
 
 // Config to send to clients
 var config = { 
 	"cspi"  : 15, // client-server poll interval in seconds
-	//"ping" : { "interval" : 20, "addresses": ["127.0.0.1", "192.168.127.10", "www.yahoo.com"]},
-	//"http" : { "interval" : 5, "addresses": ["http://127.0.0.1"]}
-	"smb" : [ { "interval": 15, 
-	            "share": "\\\\127.0.0.1\\smb", 
-	            "domain" : "WORKGROUP", 
-	            "username": "Hugh", 
-	            "password": "food411"},
-	          { "interval": 17, 
-	            "share": "\\\\127.0.0.1\\smb", 
-	            "domain" : "WORKGROUP", 
-	            "username": "Hugh", 
-	            "password": "food411"} ]
+	"smb" : [ //{ "interval": 15, 
+	//             "share": "\\\\127.0.0.1\\smb", 
+	//             "domain" : "WORKGROUP", 
+	//             "username": "Hugh", 
+	//             "password": "food411"},
+	//           { "interval": 17, 
+	//             "share": "\\\\127.0.0.1\\smb", 
+	//             "domain" : "WORKGROUP", 
+	//             "username": "Hugh", 
+	//             "password": "food411"} 
+	],
+	"http" : [ //{"interval": 15, "url": "http://www.google.com"}, 
+	           //{"interval": 20, "url": "http://www.yahoo.com"}
+	]
 };
 
 // create DB in memory and create tables if do not exist
 var db = new sqlite3.Database(':memory:');
-//db.run("CREATE TABLE if not exists ping (date INTEGER, host TEXT, ipv4 TEXT, mac TEXT, ms INTEGER)");
-//db.run("CREATE TABLE if not exists http (date INTEGER, url TEXT, ipv4 TEXT, mac TEXT)");
-db.run("CREATE TABLE if not exists smb (date INTEGER, share TEXT, domain TEXT, username TEXT, password TEXT)");
+db.run("CREATE TABLE if not exists smb  (date INTEGER, host TEXT, share TEXT, domain TEXT, username TEXT, password TEXT)");
+db.run("CREATE TABLE if not exists http (date INTEGER, host TEXT, url TEXT, statuscode TEXT)");
 
 
 var app = express();  // create web server
 app.use(bodyParser.json()); // support json encoded bodies
 app.use(bodyParser.urlencoded({ extended: true })); // support encoded bodies
+app.use('/',express.static('files'))
+app.use('/font-awesome',express.static('font-awesome'))
 
-// just serve up something (for now) at root
-app.get('/', function (req, res) {
-  res.send(Date.now().toString())
+// Dump DB to JSON
+app.get('/smb_db', function (req, res) {
+	db.all("select * FROM smb order by date desc",
+        function (err, row) {
+        	res.jsonp(row);
+    	});
 });
 
-// URI for clients to poll for config
+app.get('/http_db', function (req, res) {
+	db.all("select * FROM http order by date desc",
+        function (err, row) {
+        	res.jsonp(row);
+    	});
+});
+
+
+// Dump config to JSON
 app.get('/config', function (req, res) {
   res.send( config )
-  console.log("got hit")
 });
 
-// URI for clients to post ping data
+// URI for clients to post data
 app.post('/plus', function(req, res) {
-	console.log("got hit");
-	console.log(req.body);
-	res.send( config );  // send config back to client
-	//for (var i = 0; i < req.body.length; i++){
-	//	console.log(req.body[i])
-		// insert posted data into DB
-	    //db.run("insert into ping values (" + req.body[i].date  + ", '" +
-	    //                                     req.body[i].host + "', '" +
-	    //                                     req.body[i].ipv4 + "', '" +
-	    //                                     req.body[i].mac + "', " +
-	    //                                     req.body[i].ms + ")");
-	//}
+	res.send( config );   // send config to client in response
+	addPosted(req.body);  // add posted to db
+});
+
+app.post('/config_general', function(req, res) {
+	var parsedReq = JSON.parse(req.body.request);
+	if (parsedReq.cmd === 'save') {
+		config.cspi = parsedReq.record.cspi;
+	}
+	res.send( '{ "status": "success", "record": { "cspi": "' + config.cspi + '" } }');
+});
+
+app.post('/config_smb', function(req, res) {
+	var parsedReq = JSON.parse(req.body.request);
+	//console.log(parsedReq)
+	if (parsedReq.cmd === 'get') {
+	}
+	else if (parsedReq.cmd === 'save') {
+		config.smb.push(parsedReq.record)
+	}
+	else if (parsedReq.cmd === 'delete') {
+		var reversed = parsedReq.selected.sort().reverse();
+		for (var i = 0; i < reversed.length; i++) {
+			config.smb.splice(reversed[i]-1, 1);
+		}
+	}
+
+    var copyConfig = _.cloneDeep(config);
+	for(var i = 0; i < copyConfig.smb.length; i++) {
+		config.smb[i].recid = i+1;
+		copyConfig.smb[i].recid = i+1;
+	}
+	res.send( '{ "status": "success", "records": ' + JSON.stringify(copyConfig.smb) + ' }');
+});
+
+app.post('/config_http', function(req, res) {
+	var parsedReq = JSON.parse(req.body.request);
+	//console.log(parsedReq)
+	if (parsedReq.cmd === 'get') {
+		//console.log("CONFIG_HTTP: GET")
+	}
+	else if (parsedReq.cmd === 'save') {
+		config.http.push(parsedReq.record)
+	}
+	else if (parsedReq.cmd === 'delete') {
+		var reversed = parsedReq.selected.sort().reverse();
+		for (var i = 0; i < reversed.length; i++) {
+			config.http.splice(reversed[i]-1, 1);
+		}
+	}
+
+    var copyConfig = _.cloneDeep(config);
+	for(var i = 0; i < copyConfig.http.length; i++) {
+		config.http[i].recid = i+1;
+		copyConfig.http[i].recid = i+1;
+	}
+	res.send( '{ "status": "success", "records": ' + JSON.stringify(copyConfig.http) + ' }');
+});
+
+app.get('/status', function(req, res) {
+	db.get("select (select count(*) FROM smb  where date >= " + (Date.now() -  60000) + ")  smb60, "  +
+		          "(select count(*) FROM smb  where date >= " + (Date.now() - 300000) + ") smb300, "  +
+		          "(select count(*) FROM smb  where date >= " + (Date.now() - 600000) + ") smb600, "  +
+		          "(select count(*) FROM smb) smb, "  +
+		          "(select count(*) FROM http where date >= " + (Date.now() -  60000) + ") http60, "  +
+		          "(select count(*) FROM http where date >= " + (Date.now() - 300000) + ") http300, " +
+		          "(select count(*) FROM http where date >= " + (Date.now() - 600000) + ") http600, " +
+		          "(select count(*) FROM http) http, "  +
+		          "(select count(distinct host) FROM http where date >= " + (Date.now() - 600000) + ") http600host, " +
+		          "(select count(distinct host) FROM smb where date >= "  + (Date.now() - 600000) + ") smb600host",
+        function (err, row) {
+        	var status = { "m": row, "c": config }
+        	res.send(status);
+    	});
 });
 
 // web service start listening
 app.listen( port, ip_addr, function () {
   console.log('Listening on port ' + port + '!')
 })
-
-// 4DEBUG ---- Prints num of rows in smb table
-setInterval(sizeSMBDB, 60000);
-function sizeSMBDB() {
-	db.get("select count(*) numRows FROM smb", 
-	//db.all("select * FROM smb", 
-        function (err, rows) {
-        console.log("Rows in smb: " + rows.numRows);
-    });
-}
 
 function addPosted(dbObj) {
 	// initialize an array of SQL commands
@@ -90,14 +156,12 @@ function addPosted(dbObj) {
 			// foreach column in table
 			for (var f in dbObj[table][i]) {
 				a[c] = f;                     // add column to column array
-				b[c] = dbObj[table][i][f];    // add value to value array
+				b[c] = dbObj[table][i][f];
 				c++;                          // increment counter
 			}
-			// turn arrays into strings in proper SQL insertion format
-			a = JSON.stringify(a).replace(/(^\[)(.*)(\]$)/,"($2)");
-			b = JSON.stringify(b).replace(/(^\[)(.*)(\]$)/,"($2)");
 			// complete SQL insertion command
-			sqlCMD[i] += ' ' + a + ' values ' + b;
+			sqlCMD[i] += ' ( ' + a.join(", ") + ') values ( ' + 
+			                     b.map(function(x){return "'" + x + "'"}).join(", ") + ' )';
 		}
 	}
 	// foreach SQL command in array
