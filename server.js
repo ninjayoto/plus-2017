@@ -22,6 +22,14 @@ var config = {
 	],
 	"http" : [ //{"interval": 15, "url": "http://www.google.com"}, 
 	           //{"interval": 20, "url": "http://www.yahoo.com"}
+	],
+	"smtp" : [ { "interval": 15,
+	             "f": "hugh@boilermaker.net",
+	             "t": "address@example.org",
+	             "s": "TEST EMAIL",
+	             "m": "This is a test",
+	             "serv": "127.0.0.1",
+	             "port": 25 }
 	]
 };
 
@@ -29,7 +37,7 @@ var config = {
 var db = new sqlite3.Database(':memory:');
 db.run("CREATE TABLE if not exists smb  (date INTEGER, host TEXT, share TEXT, domain TEXT, username TEXT, password TEXT)");
 db.run("CREATE TABLE if not exists http (date INTEGER, host TEXT, url TEXT, statuscode TEXT)");
-
+db.run("CREATE TABLE if not exists smtp (d INTEGER, h TEXT, f TEXT, t TEXT, s TEXT, m TEXT, r TEXT, serv TEXT, port TEXT)");
 
 var app = express();  // create web server
 app.use(bodyParser.json()); // support json encoded bodies
@@ -47,6 +55,13 @@ app.get('/smb_db', function (req, res) {
 
 app.get('/http_db', function (req, res) {
 	db.all("select * FROM http order by date desc",
+        function (err, row) {
+        	res.jsonp(row);
+    	});
+});
+
+app.get('/smtp_db', function (req, res) {
+	db.all("select * FROM smtp order by d desc",
         function (err, row) {
         	res.jsonp(row);
     	});
@@ -93,6 +108,29 @@ app.post('/config_smb', function(req, res) {
 		copyConfig.smb[i].recid = i+1;
 	}
 	res.send( '{ "status": "success", "records": ' + JSON.stringify(copyConfig.smb) + ' }');
+});
+
+app.post('/config_smtp', function(req, res) {
+	var parsedReq = JSON.parse(req.body.request);
+	//console.log(parsedReq)
+	if (parsedReq.cmd === 'get') {
+	}
+	else if (parsedReq.cmd === 'save') {
+		config.smtp.push(parsedReq.record)
+	}
+	else if (parsedReq.cmd === 'delete') {
+		var reversed = parsedReq.selected.sort().reverse();
+		for (var i = 0; i < reversed.length; i++) {
+			config.smtp.splice(reversed[i]-1, 1);
+		}
+	}
+
+    var copyConfig = _.cloneDeep(config);
+	for(var i = 0; i < copyConfig.smtp.length; i++) {
+		config.smtp[i].recid = i+1;
+		copyConfig.smtp[i].recid = i+1;
+	}
+	res.send( '{ "status": "success", "records": ' + JSON.stringify(copyConfig.smtp) + ' }');
 });
 
 app.post('/config_http', function(req, res) {

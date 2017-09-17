@@ -33,13 +33,17 @@ var config = {
               nodes: [
                 { id: 'config_general', text: '<i class="fa fa-cogs fa-lg"></i> General</div>' },
                 { id: 'config_http', text: '<i class="fa fa-chrome fa-lg"></i> HTTP' },
-                { id: 'config_smb', text: '<i class="fa fa-file fa-lg"></i> SMB' } 
+                { id: 'config_smb', text: '<i class="fa fa-file fa-lg"></i> SMB' },
+                { id: 'config_smtp', text: '<i class="fa fa-envelope fa-lg"></i> SMTP' },
+                { id: 'config_imap', text: '<i class="fa fa-envelope-open fa-lg"></i> IMAP' } 
               ]
             },
             { id: 'logs', text: 'Logs', group: true, expanded: true, 
               nodes: [
                 { id: 'logs_http', text: '<i class="fa fa-chrome fa-lg"></i> HTTP' },
-                { id: 'logs_smb', text: '<i class="fa fa-file fa-lg"></i> SMB' } 
+                { id: 'logs_smb', text: '<i class="fa fa-file fa-lg"></i> SMB' },
+                { id: 'logs_smtp', text: '<i class="fa fa-envelope fa-lg"></i> SMTP' },
+                { id: 'logs_imap', text: '<i class="fa fa-envelope-open fa-lg"></i> IMAP' }
               ]
             },
             { id: 'status', text: 'Status', group: true, expanded: true, 
@@ -56,11 +60,23 @@ var config = {
                 case 'config_smb':
                     w2ui.layout.content('main', w2ui.config_smb);
                     break;
+                case 'config_smtp':
+                    w2ui.layout.content('main', w2ui.config_smtp);
+                    break;
+                case 'config_imap':
+                    w2ui.layout.content('main', w2ui.config_imap);
+                    break;
                 case 'logs_http':
                     w2ui.layout.content('main', w2ui.logs_http);
                     break;
                 case 'logs_smb':
                     w2ui.layout.content('main', w2ui.logs_smb);
+                    break;
+                case 'logs_smtp':
+                    w2ui.layout.content('main', w2ui.logs_smtp);
+                    break;
+                case 'logs_imap':
+                    w2ui.layout.content('main', w2ui.logs_imap);
                     break;
                 case 'config_general':
                     w2ui.layout.content('main', w2ui.config_general);
@@ -131,6 +147,32 @@ var config = {
             smbPopup();
         }
     },
+    config_smtp: { 
+        name: 'config_smtp',
+        url: '/config_smtp',
+        columns: [
+            { field: 'interval', caption: 'Interval (seconds)', sortable: true },
+            { field: 'serv', caption: 'Server', sortable: true },
+            { field: 'port', caption: 'Port', sortable: true },
+            { field: 'f', caption: 'From', sortable: true },
+            { field: 't', caption: 'To', sortable: true },
+            { field: 's', caption: 'Subject', sortable: true },
+            { field: 'm', caption: 'Message', sortable: true },
+        ],
+        show: {
+            toolbar: true,
+            footer: true,
+            toolbarAdd: true,
+            toolbarDelete: true,
+            toolbarSearch: false,
+            toolbarInput: false,
+            searchAll: false,
+            toolbarColumns: false
+        },
+        onAdd: function () {
+            smtpPopup();
+        }
+    },
     logs_http: { 
         name: 'logs_http',
         url: '/http_db',
@@ -151,6 +193,48 @@ var config = {
     logs_smb: { 
         name: 'logs_smb',
         url: '/smb_db',
+        method: 'GET', // need this to avoid 412 error on Safari
+        //recid: 'date',
+        show: {
+            toolbar: true,
+            footer: true,
+            toolbarColumns: false
+        },
+        columns: [
+            { field: 'date', caption: 'Date' },
+            { field: 'host', caption: 'Host' },
+            { field: 'share', caption: 'Share' },
+            { field: 'domain', caption: 'Domain' },
+            { field: 'username', caption: 'Username' },
+            { field: 'password', caption: 'Password' }
+
+        ]
+    },
+    logs_smtp: { 
+        name: 'logs_smtp',
+        url: '/smtp_db',
+        method: 'GET', // need this to avoid 412 error on Safari
+        //recid: 'date',
+        show: {
+            toolbar: true,
+            footer: true,
+            toolbarColumns: false
+        },
+        columns: [
+            { field: 'd', caption: 'Date' },
+            { field: 'h', caption: 'Host' },
+            { field: 'serv', caption: 'Server' },
+            { field: 'port', caption: 'Port' },
+            { field: 'f', caption: 'From' },
+            { field: 't', caption: 'To' },
+            { field: 's', caption: 'Subject' },
+            { field: 'm', caption: 'Message' },
+            { field: 'r', caption: 'Response' }
+        ]
+    },
+    logs_imap: { 
+        name: 'logs_imap',
+        url: '/imap_db',
         method: 'GET', // need this to avoid 412 error on Safari
         //recid: 'date',
         show: {
@@ -207,8 +291,12 @@ $(function () {
     // in memory initialization
     $().w2grid(config.config_http);
     $().w2grid(config.config_smb);
+    $().w2grid(config.config_smtp);
+    $().w2grid(config.config_imap);
     $().w2grid(config.logs_http);
     $().w2grid(config.logs_smb);
+    $().w2grid(config.logs_smtp);
+    $().w2grid(config.logs_imap);
     $().w2form(config.config_general);
 });
 </script>
@@ -360,6 +448,107 @@ function httpPopup () {
                 // specifying an onOpen handler instead is equivalent to specifying an onBeforeOpen handler, which would make this code execute too early and hence not deliver.
                 $('#w2ui-popup #form').w2render('foohttp');
             }
+        }
+    });
+}
+function smtpPopup () {
+    if (!w2ui.smtp_add) {
+        $().w2form({
+            name: 'smtp_add',
+            style: 'border: 0px; background-color: transparent;',
+            url: '/config_smtp',
+            formHTML: 
+                '<div class="w2ui-page page-0">'+
+                '    <div class="w2ui-field">'+
+                '        <label>Interval:</label>'+
+                '        <div>'+
+                '           <input name="interval" type="text" maxlength="100" style="width: 250px"/>'+
+                '        </div>'+
+                '    </div>'+
+                '    <div class="w2ui-field">'+
+                '        <label>Server:</label>'+
+                '        <div>'+
+                '            <input name="serv" type="text" maxlength="100" style="width: 250px"/>'+
+                '        </div>'+
+                '    </div>'+
+                '    <div class="w2ui-field">'+
+                '        <label>Port:</label>'+
+                '        <div>'+
+                '            <input name="port" type="text" style="width: 250px"/>'+
+                '        </div>'+
+                '    </div>'+
+                '    <div class="w2ui-field">'+
+                '        <label>From:</label>'+
+                '        <div>'+
+                '            <input name="f" type="text" style="width: 250px"/>'+
+                '        </div>'+
+                '    </div>'+                
+                '    <div class="w2ui-field">'+
+                '        <label>To:</label>'+
+                '        <div>'+
+                '            <input name="t" type="text" style="width: 250px"/>'+
+                '        </div>'+
+                '    </div>'+
+                '    <div class="w2ui-field">'+
+                '        <label>Subject:</label>'+
+                '        <div>'+
+                '            <input name="s" type="text" style="width: 250px"/>'+
+                '        </div>'+
+                '    </div>'+
+                '    <div class="w2ui-field">'+
+                '        <label>Message:</label>'+
+                '        <div>'+
+                '            <input name="m" type="text" style="width: 250px"/>'+
+                '        </div>'+
+                '    </div>'+
+                '</div>'+
+                '<div class="w2ui-buttons">'+
+                '    <button class="btn" name="reset">Reset</button>'+
+                '    <button class="btn" name="save">Save</button>'+
+                '</div>',
+            fields: [
+                { name: 'interval', type: 'int', required: true },
+                { name: 'serv', type: 'text', required: true },
+                { name: 'port', type: 'text', required: true },
+                { name: 'f', type: 'text' },
+                { name: 't', type: 'text' },
+                { name: 's', type: 'text' },
+                { name: 'm', type: 'text' }
+            ],
+            actions: {
+                "save": function () { this.validate(); 
+                                      this.save(function(data){ 
+                                                    w2ui['config_smtp'].records = data.records;
+                                                    w2ui['config_smtp'].refresh();
+                                                    w2ui['smtp_add'].clear();
+                                                }); 
+                                      w2popup.close();
+                        },
+                "reset": function () { this.clear(); }
+            }
+        });
+    }
+    $().w2popup('open', {
+        title   : 'Add SMTP',
+        body    : '<div id="form" style="width: 100%; height: 100%;"></div>',
+        style   : 'padding: 15px 0px 0px 0px',
+        width   : 500,
+        height  : 300, 
+        //showMax : true,
+        onToggle: function (event) {
+            $(w2ui.smtp_add.box).hide();
+            event.onComplete = function () {
+                $(w2ui.smtp_add.box).show();
+                w2ui.smtp_add.resize();
+            }
+        },
+        onOpen: function (event) {
+            event.onComplete = function () {
+                // specifying an onOpen handler instead is equivalent to specifying an onBeforeOpen handler, which would make this code execute too early and hence not deliver.
+                $('#w2ui-popup #form').w2render('smtp_add');
+            }
+        },
+        onSave: function (event) {
         }
     });
 }

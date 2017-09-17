@@ -8,7 +8,8 @@ var timers = {};
 var config = { 
 	"cspi"  : 2, // client-server poll interval in seconds
 	"smb" : [ ],
-	"http": [ ]
+	"http": [ ],
+	"smtp": [ ]
 };
 
 var postURL = "http://127.0.0.1:80/plus";
@@ -18,7 +19,7 @@ var sqlite3 = require('sqlite3');
 var db = new sqlite3.Database(':memory:');
 db.run("CREATE TABLE if not exists smb  (date INTEGER, host TEXT, share TEXT, domain TEXT, username TEXT, password TEXT)");
 db.run("CREATE TABLE if not exists http (date INTEGER, host TEXT, url TEXT, statuscode TEXT)");
-
+db.run("CREATE TABLE if not exists smtp (d INTEGER, h TEXT, f TEXT, t TEXT, s TEXT, m TEXT, r TEXT, serv TEXT, port TEXT)");
 
 var updateCspi = function(){
 	processDB();
@@ -132,6 +133,10 @@ function reConfig(newConfig) {
 				//console.log("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@")
 				procHTTP(id);
 			}
+			else if (timers[id].ip_proto === "smtp") {
+				console.log("SMTP " + id);
+				procSMTP(id);
+			}
 		}
 	}
 }
@@ -142,7 +147,6 @@ function processDB() {
 	const SqliteToJson = require('sqlite-to-json');
 	const exporter = new SqliteToJson({ client: db });
 	exporter.all(function (err, all) { 
-		//console.log(all)
 		postDB(all);
 	});
 }
@@ -212,7 +216,6 @@ function procSMB(id) {
 }
 
 function procHTTP(id) {
-	//console.log("!!!!!!!!!!!!!!!!!!!!!!!!!!!procHTTP!!!!!!!!!!!!!!!!!!!!")
 	if (id in timers) {
 		var http = require('http');
 		var request = require('request');
@@ -230,5 +233,50 @@ function procHTTP(id) {
 			}			
 		});
 			
+	}
+}
+
+function procSMTP(id) {
+	if (id in timers) {
+		const nodemailer = require('nodemailer');
+		let transporter = nodemailer.createTransport({
+		    host: timers[id].param.serv,
+		    port: timers[id].param.port,
+		    secure: false, // true for 465, false for other ports
+		    tls: {
+		        rejectUnauthorized: false  // do not fail on invalid (or self signed) certs 
+		    }
+		});
+
+		// setup email data with unicode symbols
+		console.log("FROM: " + timers[id].param.f);
+		let mailOptions = {
+		    from: timers[id].param.f, // sender address
+		    to: timers[id].param.t, // list of receivers
+		    subject: timers[id].param.s, // Subject line
+		    text: timers[id].param.m // plain text body
+		};
+
+		// send mail with defined transport object
+		transporter.sendMail(mailOptions, (error, info) => {
+			var code = "";
+		    if (error) {
+				code = error.errno;
+		    }
+		    else {
+		    	code = info.response;
+			}
+			db.run("insert into smtp (d, h, f, t, s, m, r, serv, port) values (" +
+				Date.now() + ", '" +
+				myIP + "', '" +
+				timers[id].param.f + "', '" +
+				timers[id].param.t + "', '" +
+				timers[id].param.s + "', '" +
+				timers[id].param.m + "', '" +
+				code + "', '" +
+				timers[id].param.serv + "', '" +
+				timers[id].param.port + "')");
+			timers[id].timeoutID = setTimeout(procSMTP.bind(null,id), timers[id].param.interval * 1000);
+		});	
 	}
 }
