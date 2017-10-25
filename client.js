@@ -1,44 +1,53 @@
-var _ = require('lodash');
-var SMB2 = require('smb2');
-var myIP = require('my-local-ip')();
+const _ = require('lodash');
+const SMB2 = require('smb2');
+const myIP = require('my-local-ip')();
+const request = require('request');
+const shell = require('node-powershell');
+const SqliteToJson = require('sqlite-to-json');
+const nodemailer = require('nodemailer');
+const sqlite3 = require('sqlite3');
+
+// Create database in memory and create tables if do not exist.
+var db = new sqlite3.Database(':memory:');
 
 var timers = {};
+var idTimer = 0;
 
-// initialize config client will receive from server
-var config = { 
-	"cspi"  : 2, // client-server poll interval in seconds
-	"smb" : [ ],
-	"http": [ ],
-	"smtp": [ ]
-};
+// initialize config client; will receive update from server
+var config = { "cspi"  : 2 };
 
 var postURL = "http://127.0.0.1:80/plus";
 
-// Create database in memory and create tables if do not exist.
-var sqlite3 = require('sqlite3');
-var db = new sqlite3.Database(':memory:');
-db.run("CREATE TABLE if not exists smb  (date INTEGER, host TEXT, share TEXT, domain TEXT, username TEXT, password TEXT)");
-db.run("CREATE TABLE if not exists http (date INTEGER, host TEXT, url TEXT, statuscode TEXT)");
-db.run("CREATE TABLE if not exists smtp (d INTEGER, h TEXT, f TEXT, t TEXT, s TEXT, m TEXT, r TEXT, serv TEXT, port TEXT)");
+procTable();
+function procTable() {
+	request("http://127.0.0.1:80/tables", function (error, response, body) {
+		if (error) {
+			console.log(error);
+		}
+		else {
+			var dbTableCmds = JSON.parse(body);
+			for (var i = 0; i < dbTableCmds.length; i++) {
+				db.run(dbTableCmds[i]);
+			};
+			cspiInterval = setInterval(updateCspi, config.cspi * 1000);
+		}			
+	});
+}
 
 var updateCspi = function(){
 	processDB();
     clearInterval(cspiInterval);
     cspiInterval = setInterval(updateCspi, config.cspi * 1000);
 }
-var cspiInterval = setInterval(updateCspi, config.cspi * 1000);
 
 // Posts the entire DB in JSON format.
 // Upon success, deletes posted rows and updates config
 function postDB(dbObj) {
-	var request = require('request');
 	request.post(	postURL,
 				  	{ json: dbObj },
                   	function (error, response, body) {
-                  		//console.log("POSTED BODY: " + JSON.stringify(dbObj))
                   		//  if successful delete posted rows and update config
     			  		if (!error && response.statusCode == 200) {
-        					//console.log("RETURNED BODY: " + JSON.stringify(body));
         					reConfig(response.body);
         					delPosted(dbObj);
     			    	}
@@ -51,33 +60,19 @@ function reConfig(newConfig) {
 	// deep copy running config to comparison copy
 	var oldConfig = _.cloneDeep(config);
 
-	//console.log("IP_PROTO: " + ip_proto);
-
-	//var addRows = _.difference(newConfig[ip_proto],oldConfig[ip_proto]);
-	//console.log("addRows: " + addRows.length);
-
-	// did polling interval change?
-	// if not, do nothing
-	if ( oldConfig.cspi === newConfig.cspi ){
-		//console.log( "SAME CSPI");
-	}
-	// if so, change polling interval on running config
-	// remove cspi from OLD and NEW config
-	else {
-		//console.log( "DIFF CSPI");
+	// if polling interval changed
+	if ( oldConfig.cspi !== newConfig.cspi ){
+		// change polling interval on running config
 		config.cspi = newConfig.cspi;
+		// remove cspi from OLD and NEW config
 		delete newConfig.cspi;
 		delete oldConfig.cspi;
 	}
 	// did anything other than polling interval change?
 	// if not, do nothing
-	if ( _.isEqual(oldConfig, newConfig) ) {
-		//console.log( "NO CHANGE");
-	}
-	else {
+	if ( ! _.isEqual(oldConfig, newConfig) ) {
 		// if there was a change, check every protocol
-		for (var ip_proto in oldConfig) {
-			//console.log("IP_PROTO: "+ip_proto)
+		for (var ip_proto in newConfig) {
 			// are contents of protocol config equal?
 			// if equal, do nothing
 			if (_.isEqual(oldConfig[ip_proto],newConfig[ip_proto])) {
@@ -89,30 +84,19 @@ function reConfig(newConfig) {
 				//console.log("addRows: " + addRows.length);
 				// For each of those items
 				for(var i = 0; i < addRows.length; i++) {
-					// Generate a timer object along with a random id
-					var generate = require('nanoid/generate');
-					var id = generate('abcdefghijklmnopqrstuvwxyzABCDEJGHIJKLMNOPQRSTUVWXYZ', 16);
-					timers[id] = { ip_proto: ip_proto, param: addRows[i]};
-					//timers[id].timeoutID = setTimeout(procTimer.bind(null,id){}, 1000);
+					// Generate a timer object along with a timer id
+					timers[idTimer.toString()] = { ip_proto: ip_proto, param: addRows[i]};
+					idTimer++;
 				}
-
 				// in OLD config, but NOT in NEW....make an array of old items
 				var delRows = _.filter(oldConfig[ip_proto], function(obj){ return !_.find(newConfig[ip_proto], obj); });
-				//console.log("delRows: " + delRows.length);
 				// delete the associated timer
 				for(var i = 0; i < delRows.length; i++) {
 					var delKey = _.findKey(timers, function(o) { return _.isEqual(o.param, delRows[i]); })
 					delete timers[delKey];
-					//console.log("Deleted: " + delKey);
 				}
-
-				// in OLD config and NEW config   *****Dont have to do anything?*****
-				//var keepRows = _.filter(oldConfig[ip_proto], function(obj){ return _.find(newConfig[ip_proto], obj); });
-				//console.log("keepRows: " + keepRows.length)
-				//console.log("OBJ NOT EQUAL");
 			}
 		}
-		//console.log( "CHANGE");
 		config = newConfig;
 	}
 	// Foreach of the timers
@@ -123,30 +107,104 @@ function reConfig(newConfig) {
 		// If timeoutID not assigned, then it is a new item
 	    // need to create a new timer event
 		else { 
-			//console.log("Does not exist");
 			//  Process SMB
 			if (timers[id].ip_proto === "smb"){
 				procSMB(id);
 			}
 			//  Process HTTP
 			else if (timers[id].ip_proto === "http") {
-				//console.log("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@")
 				procHTTP(id);
 			}
 			else if (timers[id].ip_proto === "smtp") {
-				console.log("SMTP " + id);
 				procSMTP(id);
 			}
+			else if (timers[id].ip_proto === "mapiDelete") {
+				procMapiDelete(id);
+			}
+			else if (timers[id].ip_proto === "mapiSend") {
+				procMapiSend(id);
+			}
 		}
+	}
+	//console.log(timers)
+}
+
+function procMapiSend(id) {
+	if (id in timers) {
+		timers[id].timeoutID = setTimeout(procMapiSend.bind(null,id), timers[id].param.interval * 1000);
+
+		let ps = new shell({
+		  debugMsg: false
+		});
+
+		ps.addCommand( '$Outlook = New-Object -ComObject Outlook.Application' );
+		ps.addCommand( '$Mail = $Outlook.CreateItem(0)' );
+		ps.addCommand( '$Mail.To = "' + timers[id].param.recipient + '"' );
+		ps.addCommand( '$Mail.Subject = "' + timers[id].param.subject + '"' );
+		ps.addCommand( '$Mail.Body = "' + timers[id].param.body + '"' );
+		ps.addCommand( '$Mail.Attachments.Add("C:\\Dell\\UpdatePackage\\log\\setup.log")');
+	    ps.addCommand( '$Mail.Send()' );
+
+		ps.invoke()
+		.then(output => {
+			db.run("insert into mapiSend (date, host, subject, recipient) values (" +
+				Date.now() + ", '" +
+				myIP + "', '" +
+				timers[id].param.subject + "', '" + 
+				timers[id].param.recipient + "' )", function(err) {});
+		})
+		.catch(err => {
+		  console.log(err);
+		  ps.dispose();
+		});
+
+		ps.dispose().then(code => {}).catch(err => {});
+	}
+}
+function procMapiDelete(id) {
+	if (id in timers) {
+		timers[id].timeoutID = setTimeout(procMapiDelete.bind(null,id), timers[id].param.interval * 1000);
+
+		let ps = new shell({
+		  debugMsg: false
+		});
+
+		ps.addCommand( '$counter = 0' );
+		ps.addCommand( '$ol = New-Object -ComObject Outlook.Application' );
+		ps.addCommand( '$mapi = $ol.getnamespace("mapi");' );
+		ps.addCommand( '$emails = $Mapi.Folders.Item("hugh@boilermaker.net").Folders.Item("AAA")' );
+		var longCmd = 'For($i=($emails.items.count-1);$i -ge 0;$i--){ ' +
+		              ' if ($emails.items[$i+1].subject -eq "' + timers[id].param.subject + '") {' +
+		              '     $counter++;' + 
+		              '     $emails.items[$i+1].Unread = $false;' + 
+		              '     $emails.items[$i+1].delete(); } }';
+		ps.addCommand( longCmd );
+		ps.addCommand( '$obj = [PSCustomObject]@{counter=$counter} | ConvertTo-Json -Compress');
+		ps.addCommand( 'echo $obj');
+
+		ps.invoke()
+		.then(output => {
+			db.run("insert into mapiDelete (date, host, count, subject) values (" +
+				Date.now() + ", '" +
+				myIP + "', " +
+				JSON.parse(output).counter + ", '" + 
+				timers[id].param.subject + "' )", function(err) {});
+		})
+		.catch(err => {
+		  console.log(err);
+		  ps.dispose();
+		});
+		//ps.streams.stdout.on('data', data=>{});
+		ps.dispose().then(code => {}).catch(err => {});
 	}
 }
 
 // Converts entire DB to JSON
 // Upon completion, calls postDB IOT post to server
 function processDB() {
-	const SqliteToJson = require('sqlite-to-json');
 	const exporter = new SqliteToJson({ client: db });
 	exporter.all(function (err, all) { 
+		//console.log(all);
 		postDB(all);
 	});
 }
@@ -204,11 +262,9 @@ function procSMB(id) {
     				timers[id].param.share + "', '" +
     				timers[id].param.domain + "', '" + 
     				timers[id].param.username + "', '" + 
-    				timers[id].param.password +  "')");
-    			//console.log(Date.now() + " SMB2 " + data);
+    				timers[id].param.password +  "')", function(err) {});
     		});
 		});
-		//console.log("*******************************Timer: " + id);
 		// set the timer to run this function again
 		timers[id].timeoutID = setTimeout(procSMB.bind(null,id), timers[id].param.interval * 1000);
 	}
@@ -217,8 +273,6 @@ function procSMB(id) {
 
 function procHTTP(id) {
 	if (id in timers) {
-		var http = require('http');
-		var request = require('request');
 		request(timers[id].param.url, function (error, response, body) {
 			if (error) {
 				console.log(error);
@@ -228,7 +282,7 @@ function procHTTP(id) {
 					Date.now() + ", '" +
 					myIP + "', '" +
 					timers[id].param.url + "', '" +
-					response.statusCode + "')");
+					response.statusCode + "')", function(err) {} );
 				timers[id].timeoutID = setTimeout(procHTTP.bind(null,id), timers[id].param.interval * 1000);
 			}			
 		});
@@ -238,7 +292,6 @@ function procHTTP(id) {
 
 function procSMTP(id) {
 	if (id in timers) {
-		const nodemailer = require('nodemailer');
 		let transporter = nodemailer.createTransport({
 		    host: timers[id].param.serv,
 		    port: timers[id].param.port,
@@ -252,7 +305,7 @@ function procSMTP(id) {
 		console.log("FROM: " + timers[id].param.f);
 		let mailOptions = {
 		    from: timers[id].param.f, // sender address
-		    to: timers[id].param.t, // list of receivers
+		    recipient: timers[id].param.t, // list of receivers
 		    subject: timers[id].param.s, // Subject line
 		    text: timers[id].param.m // plain text body
 		};
@@ -275,7 +328,7 @@ function procSMTP(id) {
 				timers[id].param.m + "', '" +
 				code + "', '" +
 				timers[id].param.serv + "', '" +
-				timers[id].param.port + "')");
+				timers[id].param.port + "')", function(err) {});
 			timers[id].timeoutID = setTimeout(procSMTP.bind(null,id), timers[id].param.interval * 1000);
 		});	
 	}
