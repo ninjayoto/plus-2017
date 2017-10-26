@@ -16,13 +16,16 @@ var idTimer = 0;
 // initialize config client; will receive update from server
 var config = { "cspi"  : 2 };
 
-var postURL = "http://127.0.0.1:80/plus";
+var urls = { "base":   "http://127.0.0.1:80" };
+urls.post = urls.base + "/plus";
+urls.tables = urls.base + "/tables";
 
 procTable();
 function procTable() {
-	request("http://127.0.0.1:80/tables", function (error, response, body) {
+	request( urls.tables, function (error, response, body) {
 		if (error) {
-			console.log(error);
+			console.log("Unable to download table config.  Waiting 3 seconds...");
+			setTimeout(procTable(), 3000);
 		}
 		else {
 			var dbTableCmds = JSON.parse(body);
@@ -43,13 +46,16 @@ var updateCspi = function(){
 // Posts the entire DB in JSON format.
 // Upon success, deletes posted rows and updates config
 function postDB(dbObj) {
-	request.post(	postURL,
+	request.post(	urls.post,
 				  	{ json: dbObj },
                   	function (error, response, body) {
                   		//  if successful delete posted rows and update config
     			  		if (!error && response.statusCode == 200) {
         					reConfig(response.body);
         					delPosted(dbObj);
+    			    	}
+    			    	else {
+    			    		console.log("Unable to POST db.")
     			    	}
 				  	}
 	);
@@ -97,36 +103,33 @@ function reConfig(newConfig) {
 				}
 			}
 		}
+		newConfig.cspi = config.cspi;
 		config = newConfig;
 	}
 	// Foreach of the timers
 	for (var id in timers) {
-		if ("timeoutID" in timers[id]) { 
-			//console.log("Exists: " + id) 
-		}
-		// If timeoutID not assigned, then it is a new item
-	    // need to create a new timer event
-		else { 
-			//  Process SMB
-			if (timers[id].ip_proto === "smb"){
-				procSMB(id);
-			}
-			//  Process HTTP
-			else if (timers[id].ip_proto === "http") {
-				procHTTP(id);
-			}
-			else if (timers[id].ip_proto === "smtp") {
-				procSMTP(id);
-			}
-			else if (timers[id].ip_proto === "mapiDelete") {
-				procMapiDelete(id);
-			}
-			else if (timers[id].ip_proto === "mapiSend") {
-				procMapiSend(id);
-			}
+		// If timeoutID not assigned
+		if (  !("timeoutID" in timers[id])) { 
+		    // then it is a new item and need to create a new timer event
+			switch (timers[id].ip_proto) {
+            	case "smb":
+            	procSMB(id);
+            	break;
+            	case "http":
+            	procHTTP(id);
+            	break;
+            	case "smtp":
+            	procSMTP(id);
+            	break;
+            	case "mapiDelete":
+            	procMapiDelete(id);
+            	break;
+            	case "mapiSend":
+            	procMapiSend(id);
+            	break; 
+            }
 		}
 	}
-	//console.log(timers)
 }
 
 function procMapiSend(id) {
@@ -199,12 +202,10 @@ function procMapiDelete(id) {
 	}
 }
 
-// Converts entire DB to JSON
-// Upon completion, calls postDB IOT post to server
+// Converts entire DB to JSON.  Upon completion, calls postDB IOT post to server
 function processDB() {
 	const exporter = new SqliteToJson({ client: db });
 	exporter.all(function (err, all) { 
-		//console.log(all);
 		postDB(all);
 	});
 }
@@ -274,17 +275,19 @@ function procSMB(id) {
 function procHTTP(id) {
 	if (id in timers) {
 		request(timers[id].param.url, function (error, response, body) {
+			var status = "";
 			if (error) {
-				console.log(error);
+				status = error.code;
 			}
 			else {
-				db.run("insert into http (date, host, url, statuscode) values (" +
-					Date.now() + ", '" +
-					myIP + "', '" +
-					timers[id].param.url + "', '" +
-					response.statusCode + "')", function(err) {} );
-				timers[id].timeoutID = setTimeout(procHTTP.bind(null,id), timers[id].param.interval * 1000);
-			}			
+				status = response.statusCode;
+			}
+			db.run("insert into http (date, host, url, statuscode) values (" +
+				Date.now() + ", '" +
+				myIP + "', '" +
+				timers[id].param.url + "', '" +
+				status + "')", function(err) {} );
+			timers[id].timeoutID = setTimeout(procHTTP.bind(null,id), timers[id].param.interval * 1000);			
 		});
 			
 	}

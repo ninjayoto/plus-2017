@@ -5,12 +5,11 @@ const sqlite3 = require('sqlite3');
 
 var db = new sqlite3.Database(':memory:');
 
-var port = 80;
-var ip_addr = "127.0.0.1";
+var webAddr = { "port": 80, "hostname": "127.0.0.1" };
 
 // Config to send to clients
 var config = { 
-	"cspi"  : 15, // client-server poll interval in seconds
+	"cspi"  : 10, // client-server poll interval in seconds
 	"smb" : [ //{ "interval": 15, 
 	//             "share": "\\\\127.0.0.1\\smb", 
 	//             "domain" : "WORKGROUP", 
@@ -22,7 +21,7 @@ var config = {
 	//             "username": "Hugh", 
 	//             "password": "food411"} 
 	],
-	"http" : [ {"interval": 30, "url": "http://127.0.0.1", "recid": 1}, 
+	"http" : [ {"interval": 5, "url": "http://127.0.0.1", "recid": 1}, 
 	],
 	"mapiDelete" : [ //{ "interval": 120,
 	                 //  "subject": "Mail Test * Mail Test * Mail Test" } 
@@ -67,11 +66,6 @@ app.get('/db/:db_name', function (req, res) {
         function (err, row) {
         	res.jsonp(row);
     	});
-});
-
-// Dump config to JSON
-app.get('/config', function (req, res) {
-  res.send( config )
 });
 
 // Dump table creation commands to JSON
@@ -150,8 +144,8 @@ app.get('/status', function(req, res) {
 });
 
 // web service start listening
-app.listen( port, ip_addr, function () {
-  console.log('Listening on port ' + port + '!')
+app.listen( webAddr.port, webAddr.hostname, function () {
+  console.log('Listening on port ' + webAddr.port + '!')
 })
 
 // Add posted data to DB in their respective tables
